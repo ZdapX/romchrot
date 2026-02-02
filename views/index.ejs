@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ChatApp Premium</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header>
+            <h3 id="header-title">Public Room</h3>
+        </header>
+
+        <!-- Area Scroll Chat -->
+        <main id="main-scroll">
+            <!-- Tab Room -->
+            <div id="room-view" class="content active">
+                <div id="public-messages" class="chat-box"></div>
+            </div>
+
+            <!-- Tab Private -->
+            <div id="private-view" class="content">
+                <div id="user-list"></div>
+                <div id="private-chat-area" style="display:none;">
+                    <button onclick="backToUserList()" style="border:none; background:white; padding:10px 16px; border-radius:12px; font-weight:700; cursor:pointer; margin-bottom:15px; font-size:13px; border:1px solid #E4E6EB;">
+                        <i class="fa fa-arrow-left"></i> Kembali
+                    </button>
+                    <div id="private-messages" class="chat-box"></div>
+                </div>
+            </div>
+
+            <!-- Tab Profile -->
+            <div id="profile-view" class="content">
+                <div class="profile-card">
+                    <img id="my-pic" src="<%= user.profilePic %>">
+                    <div class="profile-input-group">
+                        <label>Nama Pengguna</label>
+                        <input type="text" id="my-name" value="<%= user.displayName %>">
+                    </div>
+                    <div class="profile-input-group">
+                        <label>Foto Profil Baru</label>
+                        <input type="file" id="change-pic" accept="image/*">
+                    </div>
+                    <button onclick="updateProfile()" class="btn-update">Simpan Profil</button>
+                    <a href="/logout" class="btn-logout">Logout / Keluar</a>
+                </div>
+            </div>
+        </main>
+
+        <!-- Area Input (Sejajar secara vertikal, tidak melayang) -->
+        <div id="input-area">
+            <label style="cursor:pointer; color:#65676B; font-size:20px; padding:0 5px;">
+                <i class="fa-solid fa-circle-plus"></i>
+                <input type="file" id="img-input" accept="image/*" hidden>
+            </label>
+            <div class="input-wrapper">
+                <input type="text" id="msg-input" placeholder="Tulis pesan Anda...">
+            </div>
+            <button onclick="send()" id="btn-send"><i class="fa fa-paper-plane"></i></button>
+        </div>
+
+        <!-- Navigasi Bawah -->
+        <nav>
+            <div onclick="switchTab('room')" class="nav-item active" id="nav-room">
+                <i class="fa-solid fa-house-chimney"></i><span>Home</span>
+            </div>
+            <div onclick="switchTab('private')" class="nav-item" id="nav-private">
+                <i class="fa-solid fa-message"></i><span>Chat</span>
+            </div>
+            <div onclick="switchTab('profile')" class="nav-item" id="nav-profile">
+                <i class="fa-solid fa-circle-user"></i><span>Profil</span>
+            </div>
+        </nav>
+    </div>
+
+    <!-- Script Utama -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        const myId = "<%= user._id %>";
+        const myName = "<%= user.displayName %>";
+        let targetId = 'public';
+
+        socket.emit('join', myId);
+
+        // Tab Switching
+        function switchTab(tab) {
+            document.querySelectorAll('.content').forEach(c => c.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            document.getElementById(tab + '-view').classList.add('active');
+            document.getElementById('nav-' + tab).classList.add('active');
+            
+            const inputArea = document.getElementById('input-area');
+            if (tab === 'room') {
+                targetId = 'public';
+                document.getElementById('header-title').innerText = 'Public Room';
+                inputArea.style.display = 'flex';
+                loadMessages('public');
+            } else if (tab === 'private') {
+                inputArea.style.display = 'none';
+                document.getElementById('header-title').innerText = 'Pesan Pribadi';
+                document.getElementById('user-list').style.display = 'block';
+                document.getElementById('private-chat-area').style.display = 'none';
+                loadUsers();
+            } else {
+                inputArea.style.display = 'none';
+                document.getElementById('header-title').innerText = 'Profil Saya';
+            }
+        }
+
+        // Ambil User List
+        async function loadUsers() {
+            const res = await fetch('/api/users');
+            const users = await res.json();
+            const list = document.getElementById('user-list');
+            list.innerHTML = '';
+            users.forEach(u => {
+                if (u._id !== myId) {
+                    list.innerHTML += `
+                        <div class="user-item" onclick="startPrivate('${u._id}', '${u.displayName}')">
+                            <img src="${u.profilePic}">
+                            <div class="user-info">
+                                <strong>${u.displayName}</strong>
+                                <small><i class="fa fa-circle"></i> Online</small>
+                            </div>
+                        </div>`;
+                }
+            });
+        }
+
+        function startPrivate(id, name) {
+            targetId = id;
+            document.getElementById('user-list').style.display = 'none';
+            document.getElementById('private-chat-area').style.display = 'block';
+            document.getElementById('input-area').style.display = 'flex';
+            document.getElementById('header-title').innerText = name;
+            loadMessages(id);
+        }
+
+        function backToUserList() { switchTab('private'); }
+
+        // Riwayat Pesan
+        async function loadMessages(tid) {
+            const res = await fetch('/api/messages/' + tid);
+            const messages = await res.json();
+            const boxId = (tid === 'public') ? 'public-messages' : 'private-messages';
+            const box = document.getElementById(boxId);
+            box.innerHTML = '';
+            messages.forEach(msg => appendMsg(boxId, msg, false));
+        }
+
+        // Kompresi Gambar Otomatis
+        function compressImage(file) {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.src = e.target.result;
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        let w = img.width, h = img.height, max = 800;
+                        if (w > h && w > max) { h *= max/w; w = max; }
+                        else if (h > max) { w *= max/h; h = max; }
+                        canvas.width = w; canvas.height = h;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, w, h);
+                        resolve(canvas.toDataURL('image/jpeg', 0.7));
+                    }
+                }
+            });
+        }
+
+        // Kirim Pesan
+        async function send() {
+            const input = document.getElementById('msg-input');
+            const fileInput = document.getElementById('img-input');
+            const btn = document.getElementById('btn-send');
+            if (!input.value && !fileInput.files[0]) return;
+
+            btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i>';
+            btn.disabled = true;
+
+            let image = null;
+            if (fileInput.files[0]) image = await compressImage(fileInput.files[0]);
+
+            socket.emit('send_message', { 
+                senderId: myId, 
+                senderName: myName, // Memperbaiki undefined name
+                to: targetId, 
+                text: input.value, 
+                image 
+            });
+
+            input.value = ''; fileInput.value = '';
+            btn.innerHTML = '<i class="fa fa-paper-plane"></i>';
+            btn.disabled = false;
+        }
+
+        // Socket Listener
+        socket.on('new_message', (msg) => {
+            if (msg.to === 'public' && targetId === 'public') appendMsg('public-messages', msg, true);
+            else if (msg.to !== 'public' && (msg.senderId === targetId || msg.senderId === myId)) appendMsg('private-messages', msg, true);
+        });
+
+        // Tampilkan Pesan di UI
+        function appendMsg(divId, msg, smooth) {
+            const box = document.getElementById(divId);
+            if(!box) return;
+            const isMe = msg.senderId === myId;
+            const div = document.createElement('div');
+            div.className = `msg ${isMe ? 'me' : 'other'}`;
+            div.innerHTML = `
+                <small class="sender-name">${isMe ? 'Anda' : (msg.senderName || 'User')}</small>
+                <div class="bubble">
+                    ${msg.text ? `<div>${msg.text}</div>` : ''}
+                    ${msg.image ? `<img src="${msg.image}" class="chat-img" onclick="window.open(this.src)">` : ''}
+                </div>`;
+            box.appendChild(div);
+            // Scroll Otomatis
+            const main = document.getElementById('main-scroll');
+            main.scrollTo({ top: main.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
+        }
+
+        // Update Profil
+        async function updateProfile() {
+            const displayName = document.getElementById('my-name').value;
+            const file = document.getElementById('change-pic').files[0];
+            let profilePic = document.getElementById('my-pic').src;
+            if(file) profilePic = await compressImage(file);
+            const res = await fetch('/api/update-profile', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ displayName, profilePic })
+            });
+            if(res.ok) { alert('Berhasil!'); location.reload(); }
+        }
+
+        loadMessages('public');
+    </script>
+</body>
+</html>

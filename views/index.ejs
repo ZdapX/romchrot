@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>ChatApp Premium</title>
+    <title>Premium Chat</title>
     <link rel="stylesheet" href="/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
@@ -14,14 +14,14 @@
             <h3 id="header-title">Public Room</h3>
         </header>
 
-        <!-- Area Scroll Chat -->
+        <!-- Area Scroll Chat Utama -->
         <main id="main-scroll">
-            <!-- Tab Room -->
+            <!-- 1. Tab Public Room -->
             <div id="room-view" class="content active">
                 <div id="public-messages" class="chat-box"></div>
             </div>
 
-            <!-- Tab Private -->
+            <!-- 2. Tab Private Chat -->
             <div id="private-view" class="content">
                 <div id="user-list"></div>
                 <div id="private-chat-area" style="display:none;">
@@ -32,7 +32,7 @@
                 </div>
             </div>
 
-            <!-- Tab Profile -->
+            <!-- 3. Tab Profile -->
             <div id="profile-view" class="content">
                 <div class="profile-card">
                     <img id="my-pic" src="<%= user.profilePic %>">
@@ -50,7 +50,7 @@
             </div>
         </main>
 
-        <!-- Area Input (Sejajar secara vertikal, tidak melayang) -->
+        <!-- Area Input (Sejajar secara vertikal, tidak melayang menutupi pesan) -->
         <div id="input-area">
             <label style="cursor:pointer; color:#65676B; font-size:20px; padding:0 5px;">
                 <i class="fa-solid fa-circle-plus"></i>
@@ -79,17 +79,19 @@
     <!-- Script Utama -->
     <script src="/socket.io/socket.io.js"></script>
     <script>
-        const socket = io();
+        // Inisialisasi Socket dengan Polling & Websocket agar stabil di Vercel
+        const socket = io({ transports: ['polling', 'websocket'] });
         const myId = "<%= user._id %>";
-        const myName = "<%= user.displayName %>";
+        let myDisplayName = "<%= user.displayName %>";
         let targetId = 'public';
 
         socket.emit('join', myId);
 
-        // Tab Switching
+        // Fungsi Ganti Tab (Navigasi)
         function switchTab(tab) {
             document.querySelectorAll('.content').forEach(c => c.classList.remove('active'));
             document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            
             document.getElementById(tab + '-view').classList.add('active');
             document.getElementById('nav-' + tab).classList.add('active');
             
@@ -111,7 +113,7 @@
             }
         }
 
-        // Ambil User List
+        // Ambil Daftar User (Private Chat)
         async function loadUsers() {
             const res = await fetch('/api/users');
             const users = await res.json();
@@ -142,7 +144,7 @@
 
         function backToUserList() { switchTab('private'); }
 
-        // Riwayat Pesan
+        // Ambil Riwayat Pesan dari Database (Agar saat refresh chat tidak hilang)
         async function loadMessages(tid) {
             const res = await fetch('/api/messages/' + tid);
             const messages = await res.json();
@@ -152,7 +154,7 @@
             messages.forEach(msg => appendMsg(boxId, msg, false));
         }
 
-        // Kompresi Gambar Otomatis
+        // Fungsi Kompresi Foto (Supaya Vercel tidak stuck)
         function compressImage(file) {
             return new Promise((resolve) => {
                 const reader = new FileReader();
@@ -174,71 +176,100 @@
             });
         }
 
-        // Kirim Pesan
+        // Fungsi Kirim Pesan
         async function send() {
             const input = document.getElementById('msg-input');
             const fileInput = document.getElementById('img-input');
             const btn = document.getElementById('btn-send');
+            
             if (!input.value && !fileInput.files[0]) return;
+            if (!socket.connected) return alert("Koneksi bermasalah, silakan refresh.");
 
             btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i>';
             btn.disabled = true;
 
-            let image = null;
-            if (fileInput.files[0]) image = await compressImage(fileInput.files[0]);
+            try {
+                let image = null;
+                if (fileInput.files[0]) image = await compressImage(fileInput.files[0]);
 
-            socket.emit('send_message', { 
-                senderId: myId, 
-                senderName: myName, // Memperbaiki undefined name
-                to: targetId, 
-                text: input.value, 
-                image 
-            });
+                socket.emit('send_message', { 
+                    senderId: myId, 
+                    senderName: myDisplayName, 
+                    to: targetId, 
+                    text: input.value, 
+                    image 
+                });
 
-            input.value = ''; fileInput.value = '';
-            btn.innerHTML = '<i class="fa fa-paper-plane"></i>';
-            btn.disabled = false;
+                // Reset setelah kirim
+                input.value = ''; 
+                fileInput.value = '';
+                // Proteksi tombol stuck (khas serverless)
+                setTimeout(() => {
+                    btn.innerHTML = '<i class="fa fa-paper-plane"></i>';
+                    btn.disabled = false;
+                }, 1000);
+
+            } catch (err) {
+                btn.disabled = false;
+                alert("Gagal kirim");
+            }
         }
 
-        // Socket Listener
+        // Listener Pesan Masuk Realtime
         socket.on('new_message', (msg) => {
-            if (msg.to === 'public' && targetId === 'public') appendMsg('public-messages', msg, true);
-            else if (msg.to !== 'public' && (msg.senderId === targetId || msg.senderId === myId)) appendMsg('private-messages', msg, true);
+            if (msg.to === 'public' && targetId === 'public') {
+                appendMsg('public-messages', msg, true);
+            } else if (msg.to !== 'public' && (msg.senderId === targetId || msg.senderId === myId)) {
+                appendMsg('private-messages', msg, true);
+            }
         });
 
-        // Tampilkan Pesan di UI
+        // Tampilkan Pesan ke Layar
         function appendMsg(divId, msg, smooth) {
             const box = document.getElementById(divId);
             if(!box) return;
+
             const isMe = msg.senderId === myId;
             const div = document.createElement('div');
             div.className = `msg ${isMe ? 'me' : 'other'}`;
+            
             div.innerHTML = `
-                <small class="sender-name">${isMe ? 'Anda' : (msg.senderName || 'User')}</small>
+                <small class="sender-name">${isMe ? 'Anda' : (msg.senderName || 'Seseorang')}</small>
                 <div class="bubble">
                     ${msg.text ? `<div>${msg.text}</div>` : ''}
                     ${msg.image ? `<img src="${msg.image}" class="chat-img" onclick="window.open(this.src)">` : ''}
                 </div>`;
+            
             box.appendChild(div);
-            // Scroll Otomatis
+            
+            // Auto Scroll ke Pesan Paling Bawah
             const main = document.getElementById('main-scroll');
-            main.scrollTo({ top: main.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
+            main.scrollTo({ 
+                top: main.scrollHeight, 
+                behavior: smooth ? 'smooth' : 'auto' 
+            });
         }
 
-        // Update Profil
+        // Update Profil User
         async function updateProfile() {
             const displayName = document.getElementById('my-name').value;
             const file = document.getElementById('change-pic').files[0];
             let profilePic = document.getElementById('my-pic').src;
+
             if(file) profilePic = await compressImage(file);
+
             const res = await fetch('/api/update-profile', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({ displayName, profilePic })
             });
-            if(res.ok) { alert('Berhasil!'); location.reload(); }
+            if(res.ok) {
+                alert('Profil Berhasil Diperbarui!');
+                location.reload();
+            }
         }
 
+        // Muat Riwayat Chat Room saat pertama kali buka
         loadMessages('public');
     </script>
 </body>

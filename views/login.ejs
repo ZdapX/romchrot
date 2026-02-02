@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Masuk - Premium Chat</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --primary: #006AFF;
+            --bg: #F2F3F5;
+            --white: #FFFFFF;
+            --text: #1C1E21;
+            --muted: #65676B;
+            --border: #E4E6EB;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', -apple-system, sans-serif; }
+        body { background: var(--bg); display: flex; align-items: center; justify-content: center; height: 100vh; padding: 20px; }
+        
+        .card {
+            background: var(--white);
+            width: 100%;
+            max-width: 400px;
+            padding: 40px 30px;
+            border-radius: 24px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.03);
+            text-align: center;
+        }
+        .logo { font-size: 50px; color: var(--primary); margin-bottom: 15px; }
+        h1 { font-size: 24px; font-weight: 800; color: var(--text); letter-spacing: -0.5px; }
+        p { color: var(--muted); font-size: 14px; margin-bottom: 30px; margin-top: 5px; }
+        
+        .form-group { text-align: left; margin-bottom: 15px; }
+        .form-group label { display: block; font-size: 12px; font-weight: 800; color: var(--text); text-transform: uppercase; margin-bottom: 6px; margin-left: 4px; }
+        input {
+            width: 100%;
+            padding: 14px 18px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: #F0F2F5;
+            font-size: 15px;
+            outline: none;
+            transition: 0.2s;
+        }
+        input:focus { border-color: var(--primary); background: var(--white); }
+        
+        button {
+            width: 100%;
+            padding: 15px;
+            margin-top: 10px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        button:active { transform: scale(0.98); }
+        
+        .footer { margin-top: 25px; font-size: 14px; color: var(--muted); }
+        .footer span { color: var(--primary); font-weight: 700; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <div class="logo"><i class="fa-solid fa-comment-dots"></i></div>
+        <h1 id="title">Selamat Datang</h1>
+        <p id="desc">Masuk untuk terhubung dengan teman-teman.</p>
+
+        <div class="form-group">
+            <label>Username</label>
+            <input type="text" id="username" placeholder="Username unik kamu">
+        </div>
+
+        <div class="form-group">
+            <label>Password</label>
+            <input type="password" id="password" placeholder="Minimal 6 karakter">
+        </div>
+
+        <button onclick="handleAuth()" id="btn-auth">Masuk Sekarang</button>
+
+        <div class="footer">
+            <p id="toggle-text">Belum punya akun? <span onclick="toggleMode()">Daftar Gratis</span></p>
+        </div>
+    </div>
+
+    <script>
+        let isRegister = false;
+        function toggleMode() {
+            isRegister = !isRegister;
+            document.getElementById('title').innerText = isRegister ? 'Buat Akun' : 'Selamat Datang';
+            document.getElementById('desc').innerText = isRegister ? 'Daftar sekarang, gratis selamanya.' : 'Masuk untuk terhubung dengan teman-teman.';
+            document.getElementById('btn-auth').innerText = isRegister ? 'Daftar Akun' : 'Masuk Sekarang';
+            document.getElementById('toggle-text').innerHTML = isRegister ? 'Sudah punya akun? <span onclick="toggleMode()">Masuk Disini</span>' : 'Belum punya akun? <span onclick="toggleMode()">Daftar Gratis</span>';
+        }
+
+        async function handleAuth() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            if(!username || !password) return alert('Isi semua kolom!');
+
+            const res = await fetch(isRegister ? '/register' : '/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            const data = await res.json();
+            if(data.success) {
+                if(isRegister) { alert('Berhasil daftar!'); toggleMode(); }
+                else location.href = '/';
+            } else alert(data.error);
+        }
+    </script>
+</body>
+</html>

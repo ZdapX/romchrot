@@ -8,30 +8,32 @@ const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { 
+
+// Konfigurasi Socket.io agar lebih stabil di lingkungan Serverless (Vercel)
+const io = new Server(server, {
     maxHttpBufferSize: 1e7,
-    cors: { origin: "*" } 
+    cors: { origin: "*" },
+    transports: ['polling', 'websocket'] 
 });
 
-// Koneksi MongoDB (Pakai koneksi kamu)
+// MongoDB Connection
 const MONGO_URI = "mongodb+srv://dafanation999_db_user:21pOZfo7x5pmJQ4o@cluster0.0digr6d.mongodb.net/?appName=Cluster0";
 mongoose.connect(MONGO_URI)
     .then(() => console.log("MongoDB Connected"))
     .catch(err => console.error("MongoDB Error:", err));
 
-// Pengaturan Path Absolut agar Vercel tidak bingung mencari folder
+// Settings Path untuk Vercel
 app.set('views', path.join(__dirname, 'views'));
 app.set('view engine', 'ejs');
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(session({
-    secret: 'premium-chat-secret-key',
+    secret: 'premium-key-secure',
     resave: false,
     saveUninitialized: true,
-    cookie: { secure: false } 
+    cookie: { secure: false }
 }));
 
 // Schemas
@@ -79,7 +81,7 @@ app.post('/login', async (req, res) => {
             req.session.userId = user._id;
             req.session.user = user;
             res.json({ success: true });
-        } else { res.status(400).json({ error: "Login Gagal" }); }
+        } else { res.status(400).json({ error: "Username/Password salah" }); }
     } catch (e) { res.status(500).json({ error: "Server Error" }); }
 });
 
@@ -118,23 +120,31 @@ io.on('connection', (socket) => {
         socket.userId = userId;
         onlineUsers[userId] = socket.id;
     });
+
     socket.on('send_message', async (data) => {
-        const msg = new Message(data);
-        await msg.save();
-        if (data.to === 'public') io.emit('new_message', msg);
-        else {
-            if (onlineUsers[data.to]) io.to(onlineUsers[data.to]).emit('new_message', msg);
-            socket.emit('new_message', msg);
-        }
+        try {
+            const msg = new Message(data);
+            await msg.save();
+            if (data.to === 'public') {
+                io.emit('new_message', msg);
+            } else {
+                const targetSid = onlineUsers[data.to];
+                if (targetSid) io.to(targetSid).emit('new_message', msg);
+                socket.emit('new_message', msg);
+            }
+        } catch (err) { console.log(err); }
     });
-    socket.on('disconnect', () => { delete onlineUsers[socket.userId]; });
+
+    socket.on('disconnect', () => {
+        delete onlineUsers[socket.userId];
+    });
 });
 
-// Jalankan server jika tidak di Vercel (Lokal/Termux)
+// Agar bisa jalan di Termux (lokal)
 if (process.env.NODE_ENV !== 'production') {
     const PORT = process.env.PORT || 3000;
-    server.listen(PORT, () => console.log(`Server on port ${PORT}`));
+    server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 }
 
-// EKSPOR UNTUK VERCEL
+// Export app untuk Vercel
 module.exports = app;
